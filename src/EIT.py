@@ -1,100 +1,151 @@
-import numpy as np
-from constants import *
-from cmath import phase
-from scipy.integrate import complex_ode
+from os import environ
 import matplotlib.pyplot as plt
+from numpy import pi, tanh, array
+from scipy.integrate import complex_ode
 
 
-class TLS:
-    def __init__(self):
+class Results:
+    def __init__(self, key=None):
+        self.key = key
+        if key == "DSS":
+            self.t = []
+            self.c1 = []
+            self.c2 = []
+            self.c3 = []
+            self.Ωc = []
+            self.Ωp = []
 
-        self.t = []
-        self.c_1 = []
-        self.c_2 = []
-        self.c_3 = []
-        self.O_c = []
-        self.O_p = []
+class Plot:
+    DIR = f"{environ['VIRTUAL_ENV'][:-5]}/plots"
 
-    def plot_DSS(self):
+    def plot(self, results):
+        """Identifies the type of plot to be made and calls the appropriate function.
 
+        Args:
+            results (dict): Dictionary of results to be plotted.
+
+        Raises:
+            ValueError: If the results dictionary does not contain a valid key.
+        """
+        if results.key == "DSS":
+            self.dark_state_simulation(results, save_directory=self.DIR)
+        else:
+            raise KeyError(f"Invalid key: {results.key}")
+
+    @staticmethod
+    def dark_state_simulation(results, save_directory=None):
+        """Plots the results of a dark state simulation.
+
+        Args:
+            results (dict): Dictionary of results to be plotted.
+            save_directory (str, optional): Directory to save the plot to. Defaults to None.
+        """
         fig, ax1 = plt.subplots()
         fig.set_figheight(5)
         fig.set_figwidth(7)
 
         ax1.set_xlabel("Time")
         ax1.set_ylabel("Population")
-        ax1.plot(self.t, self.c_1, "k")
-        ax1.plot(self.t, self.c_2, "b--")
-        ax1.plot(self.t, self.c_3, "g.")
+        ax1.plot(results.t, results.c1, "k")
+        ax1.plot(results.t, results.c2, "b--")
+        ax1.plot(results.t, results.c3, "g.")
         ax1.tick_params(axis="y")
         ax1.legend([r"$c_{1}$", r"$c_{2}$", r"$c_{3}$"], loc=2)
 
-        ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+        ax2 = ax1.twinx()
 
-        ax2.set_ylabel(r"$Ω$ (arb. units)")  # we already handled the x-label with ax1
-        ax2.plot(self.t, self.O_c, "r:", alpha=0.5)
-        ax2.plot(self.t, self.O_p, "y-.", alpha=0.5)
+        ax2.set_ylabel(r"$Ω$ (arb. units)")
+        ax2.plot(results.t, results.Ωc, "r:", alpha=0.5)
+        ax2.plot(results.t, results.Ωp, "y-.", alpha=0.5)
         ax2.tick_params(axis="y")
         ax2.legend([r"$Ω_{C}$", r"$Ω_{P}$"], loc=1)
 
-        fig.tight_layout()  # otherwise the right y-label is slightly clipped
+        fig.tight_layout()
+
+        if save_directory is not None:
+            plt.savefig(f"{save_directory}/dark_state_simulation.png")
+
         plt.show()
 
 
-class EIT:
-    def __init__(self, t_0, t_f, dt, c_0, t_c, A_c, t_p, A_p, TLS):
+class ElectromagneticallyInducedTransparency:
+    def __init__(self, probe={"t": pi, "A": 50}, coupling={"t": 0, "A": 50}):
+        self.probe = probe
+        self.coupling = coupling
+        self.ode = complex_ode(self.differential_equation)
 
-        self.t_0 = t_0
-        self.t_f = t_f
-        self.dt = dt
-        self.c_0 = c_0
-        self.t_c = t_c
-        self.t_p = t_p
-        self.A_c = A_c
-        self.A_p = A_p
-        self.TLS = TLS
+    def differential_equation(self, t, c):
+        """Calculates the differential equation for electromagnetically induced transparency.
 
-        self.ode = complex_ode(self.diff_eq)
+        Args:
+            t (float): Time.
+            c (list): List of complex numbers representing the state of the system.
 
-    def diff_eq(self, t, c):
+        Returns:
+            list: List of complex numbers representing the time differential state of the system.
+        """
+        i = complex(0, 1)
 
-        c_1 = (i / 2) * (self.probe_laser(t) * c[2])
-        c_2 = (i / 2) * (self.coupling_laser(t) * c[2])
-        c_3 = (i / 2) * (self.probe_laser(t) * c[0] + self.coupling_laser(t) * c[1])
+        Ωp = self.rabi_frequency(t, self.probe)
+        Ωc = self.rabi_frequency(t, self.coupling)
 
-        return [c_1, c_2, c_3]
+        c1 = (i / 2) * Ωp * c[2]
+        c2 = (i / 2) * Ωc * c[2]
+        c3 = (i / 2) * (Ωp * c[0] + Ωc * c[1])
 
-    def coupling_laser(self, t):
-        return self.A_c * (np.tanh(t - self.t_c - np.pi) + 1)
+        return [c1, c2, c3]
 
-    def probe_laser(self, t):
-        return self.A_p * (np.tanh(t - self.t_p - np.pi) + 1)
+    def DarkStateSimulation(
+        self,
+        initial_state=[1, 0, 0],
+        initial_time=0,
+        final_time=10,
+        dt=0.25,
+        results=Results("DSS"),
+    ):
+        """Simulates the dark state of a system.
 
-    def DSS(self):
+        Args:
+            initial_state (list, optional): Initial state of the system. Defaults to [1, 0, 0].
+            initial_time (int, optional): Initial time of the simulation. Defaults to 0.
+            final_time (int, optional): Final time of the simulation. Defaults to 10.
+            dt (float, optional): Time step. Defaults to 0.25.
+            results (dict, optional): Dictionary of results. Defaults to defaultdict(list).
 
-        self.ode.set_initial_value(self.c_0, self.t_0)
+        Returns:
+            dict: Dictionary of results.
+        """    
+        self.ode.set_initial_value(initial_state, initial_time)
+        while self.ode.successful() and self.ode.t < final_time:
+            self.ode.integrate(self.ode.t + dt)
+            results.t.append(self.ode.t)
+            results.c1.append(abs(self.ode.y[0]))
+            results.c2.append(abs(self.ode.y[1]))
+            results.c3.append(abs(self.ode.y[2]))
 
-        while self.ode.successful() and self.ode.t < self.t_f:
+        results.Ωc = self.rabi_frequency(array(results.t), self.coupling)
+        results.Ωp = self.rabi_frequency(array(results.t), self.probe)
 
-            self.ode.integrate(self.ode.t + self.dt)
+        return results
 
-            self.TLS.t.append(self.ode.t)
-            self.TLS.c_1.append(abs(self.ode.y[0]))
-            self.TLS.c_2.append(abs(self.ode.y[1]))
-            self.TLS.c_3.append(abs(self.ode.y[2]))
+    #########################
+    # Static Methods ########
+    #########################
 
-        self.TLS.O_c = self.coupling_laser(np.array(self.TLS.t))
-        self.TLS.O_p = self.probe_laser(np.array(self.TLS.t))
+    @staticmethod
+    def rabi_frequency(t, laser):
+        """Returns the Rabi frequency of a laser at a particular time.
 
-    def PTS(self, x_0, x_f, A_0, A_f):
+        Args:
+            t (float): Time.
+            laser (dict): Dictionary of laser parameters.
 
-        x = np.arange(x_0, x_f, (x_f - x_0) / 100)
+        Returns:
+            float: Rabi frequency.
+        """        
+        return laser["A"] * (tanh(t - laser["t"] - pi) + 1)
 
 
-"""
-from EIT import *
-b = TLS()
-a = EIT(0, 10, 0.25, [1,0,0], 0, 50, np.pi, 50, b)
-a.DSS()
-b.plot_DSS()
-"""
+if __name__ == "__main__":
+    EIT = ElectromagneticallyInducedTransparency()
+    Plot().plot(EIT.DarkStateSimulation())
