@@ -33,6 +33,34 @@ class ElectromagneticallyInducedTransparency:
 
         return [dcdt1, dcdt2, dcdt3]
 
+    def simulate_transfer(self, c0=[1, 0, 0], t0=0, tf=10, dt=0.01):
+        """Returns the phases/populations of a system over the time.
+
+        Args:
+            c0 (list, optional): Initial state of the system. Defaults to [1, 0, 0].
+            t0 (int, optional): Initial time of the simulation. Defaults to 0.
+            tf (int, optional): Final time of the simulation. Defaults to 10.
+            dt (float, optional): Time step. Defaults to 0.01.
+
+        Returns:
+            list, list, list: The phase, imaginary phase, and population transfers of the system.
+        """        
+        ode = complex_ode(self.differential_equation)
+        ode.set_initial_value(c0, t0)
+
+        transfer = {
+            "phase": {"x": [], "y": [], "z": []},
+            "population": {"x": [], "y": [], "z": []},
+        }
+
+        while ode.successful() and ode.t < tf:
+            ode.integrate(ode.t + dt)
+            for i, axis in enumerate(["x", "y", "z"]):
+                transfer["phase"][axis].append(phase(ode.y[i]))
+                transfer["population"][axis].append(abs(ode.y[i]))
+
+        return transfer
+
     #########################
     # Static Methods ########
     #########################
@@ -49,7 +77,7 @@ class ElectromagneticallyInducedTransparency:
         Returns:
             float: Rabi frequency.
         """
-        return (laser["A"] * (tanh(t - laser["t"] - pi) + 1))
+        return (laser["A"] * (tanh(t - laser["t"]) + 1))
 
     @staticmethod
     def normalize(x):
@@ -65,7 +93,7 @@ class ElectromagneticallyInducedTransparency:
 
 
 class DarkState(ElectromagneticallyInducedTransparency):
-    def __init__(self, probe={"t": pi, "A": 50}, coupling={"t": 0, "A": 50}):
+    def __init__(self, probe={"t": 2 * pi, "A": 50}, coupling={"t": pi, "A": 50}):
         super().__init__(probe, coupling)
         self.t = []
         self.dcdt = {"1": [], "2": [], "3": []}
@@ -126,7 +154,6 @@ class DarkState(ElectromagneticallyInducedTransparency):
 
         plt.show()
 
-
 class PhaseTransfer(ElectromagneticallyInducedTransparency):
     def __init__(self, probe={"t": 5, "A": 5}, coupling={"t": 0, "A": 25}):
         super().__init__(probe, coupling)
@@ -138,27 +165,8 @@ class PhaseTransfer(ElectromagneticallyInducedTransparency):
         """Simulates the phase transfer of a system."""        
         for amplitude in self.amplitudes:
             self.coupling["A"] = amplitude
-            self.φ.append(self.compute_phase(**kwargs))
-
-    def compute_phase(self, c0=[1, 0, 0], t0=0, tf=10, dt=0.01):
-        """Returns the average phase of a system.
-
-        Args:
-            c0 (list, optional): Initial state of the system. Defaults to [1, 0, 0].
-            t0 (int, optional): Initial time of the simulation. Defaults to 0.
-            tf (int, optional): Final time of the simulation. Defaults to 10.
-            dt (float, optional): Time step. Defaults to 0.25.
-
-        Returns:
-            float: Average phase.
-        """        
-        ode = complex_ode(self.differential_equation)
-        ode.set_initial_value(c0, t0)
-        φ = []
-        while ode.successful() and ode.t < tf:
-            ode.integrate(ode.t + dt)
-            φ.append(phase(ode.y[0]))
-        return mean(φ)
+            transfer = self.simulate_transfer(**kwargs)
+            self.φ.append(mean(transfer["phase"]["x"]))
 
     def plot(self, save_directory=None):
         """Plots the results of a phase transfer simulation.
@@ -190,6 +198,57 @@ class PhaseTransfer(ElectromagneticallyInducedTransparency):
 
         plt.show()
 
+class PopulationTransfer(ElectromagneticallyInducedTransparency):
+    def __init__(self, probe={"t": 6, "A": 5}, coupling={"t": 1, "A": None}):
+        super().__init__(probe, coupling)
+        self.x = arange(pi / 2, 3 * pi / 2, 0.001)
+        self.max_amplitues = [10, 50]
+        self.amplitudes = [[], []]
+        self.amplitudes[0] = self.max_amplitues[0] * sin(self.x)
+        self.amplitudes[1] = self.max_amplitues[1] * sin(self.x)
+        self.φ = [[], []]
+
+    def simulate(self, **kwargs):
+        """Simulates the popultaion transfer of a system."""        
+        for i, amplitudes in enumerate(self.amplitudes):
+            for amplitude in amplitudes:
+                self.coupling["A"] = amplitude
+                transfer = self.simulate_transfer(**kwargs)
+                self.φ[i].append(mean(transfer["population"]["z"]))
+
+    def plot(self, save_directory=None):
+        """Plots the results of a population transfer simulation.
+
+        Args:
+            save_directory (str, optional): Directory to save the plot to. Defaults to None.
+        """        
+        self.x = self.x / pi - 1
+        fig, ax1 = plt.subplots()
+        fig.set_figheight(5)
+        fig.set_figwidth(7)
+
+        ax1.plot(self.x, 2 * self.amplitudes[1] / self.max_amplitues[0], color="tab:red", linestyle="--")
+
+        ax1.set_xlabel("x (microns)")
+        ax1.set_ylabel(r"$Ω_{C}(x)/Ω_{P}$", color="black")
+        ax1.plot(self.x, 2 * self.amplitudes[1] / self.max_amplitues[1], color="tab:blue", linestyle="--")
+        ax1.tick_params(axis="y", labelcolor="black")
+
+        ax2 = ax1.twinx()
+
+        ax2.plot(self.x, self.φ[1], color="tab:red")
+
+        ax2.set_ylabel("Population Transfer", color="black")
+        ax2.plot(self.x, self.φ[0], color="tab:blue")
+        ax2.tick_params(axis="y", labelcolor="black")
+
+        fig.tight_layout()
+
+        if save_directory is not None:
+            plt.savefig(f"{save_directory}/spatial_offset_vs_population_transfer.png")
+
+        plt.show()
+
 
 if __name__ == "__main__":
     DSS = DarkState()
@@ -197,5 +256,9 @@ if __name__ == "__main__":
     DSS.plot(save_directory=DSS.PLOT_DIR)
 
     PTS = PhaseTransfer()
+    PTS.simulate()
+    PTS.plot(save_directory=PTS.PLOT_DIR)
+
+    PTS = PopulationTransfer()
     PTS.simulate()
     PTS.plot(save_directory=PTS.PLOT_DIR)
