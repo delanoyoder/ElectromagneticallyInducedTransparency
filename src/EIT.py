@@ -2,7 +2,7 @@ from os import environ
 from cmath import phase
 import matplotlib.pyplot as plt
 from scipy.integrate import complex_ode
-from numpy import pi, array, arange, mean, sin, cos, tanh
+from numpy import pi, array, arange, mean, sin, tanh
 
 
 class ElectromagneticallyInducedTransparency:
@@ -49,12 +49,14 @@ class ElectromagneticallyInducedTransparency:
         ode.set_initial_value(c0, t0)
 
         transfer = {
+            "time": [],
             "phase": {"x": [], "y": [], "z": []},
             "population": {"x": [], "y": [], "z": []},
         }
 
         while ode.successful() and ode.t < tf:
             ode.integrate(ode.t + dt)
+            transfer["time"].append(ode.t)
             for i, axis in enumerate(["x", "y", "z"]):
                 transfer["phase"][axis].append(phase(ode.y[i]))
                 transfer["population"][axis].append(abs(ode.y[i]))
@@ -96,27 +98,14 @@ class DarkState(ElectromagneticallyInducedTransparency):
     def __init__(self, probe={"t": 2 * pi, "A": 50}, coupling={"t": pi, "A": 50}):
         super().__init__(probe, coupling)
         self.t = []
-        self.dcdt = {"1": [], "2": [], "3": []}
+        self.dcdt = {"x": [], "y": [], "z": []}
         self.Ω = {"p": [], "c": []}
 
-    def simulate(self, c0=[1, 0, 0], t0=0, tf=10, dt=0.25):
-        """Simulates the dark state of a system.
-
-        Args:
-            c0 (list, optional): Initial state of the system. Defaults to [1, 0, 0].
-            t0 (int, optional): Initial time of the simulation. Defaults to 0.
-            tf (int, optional): Final time of the simulation. Defaults to 10.
-            dt (float, optional): Time step. Defaults to 0.25.
-        """
-        ode = complex_ode(self.differential_equation)
-        ode.set_initial_value(c0, t0)
-        while ode.successful() and ode.t < tf:
-            ode.integrate(ode.t + dt)
-            self.t.append(ode.t)
-            self.dcdt["1"].append(abs(ode.y[0]))
-            self.dcdt["2"].append(abs(ode.y[1]))
-            self.dcdt["3"].append(abs(ode.y[2]))
-
+    def simulate(self, **kwargs):
+        """Simulates the dark state of a system."""
+        transfer = self.simulate_transfer(dt=0.25, **kwargs)
+        self.t = transfer["time"]
+        self.dcdt = transfer["population"]
         self.Ω["c"] = self.rabi_frequency(array(self.t), self.coupling)
         self.Ω["p"] = self.rabi_frequency(array(self.t), self.probe)
 
@@ -124,7 +113,6 @@ class DarkState(ElectromagneticallyInducedTransparency):
         """Plots the results of a dark state simulation.
 
         Args:
-            results (dict): Dictionary of results to be plotted.
             save_directory (str, optional): Directory to save the plot to. Defaults to None.
         """
         fig, ax1 = plt.subplots()
@@ -133,11 +121,11 @@ class DarkState(ElectromagneticallyInducedTransparency):
 
         ax1.set_xlabel("Time")
         ax1.set_ylabel("Population")
-        ax1.plot(self.t, self.dcdt["1"], "k")
-        ax1.plot(self.t, self.dcdt["2"], "b--")
-        ax1.plot(self.t, self.dcdt["3"], "g.")
+        ax1.plot(self.t, self.dcdt["x"], "k")
+        ax1.plot(self.t, self.dcdt["y"], "b--")
+        ax1.plot(self.t, self.dcdt["z"], "g.")
         ax1.tick_params(axis="y")
-        ax1.legend([r"$c_{1}$", r"$c_{2}$", r"$c_{3}$"], loc=2)
+        ax1.legend([r"$c_{x}$", r"$c_{y}$", r"$c_{z}$"], loc=2)
 
         ax2 = ax1.twinx()
 
